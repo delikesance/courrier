@@ -39,10 +39,28 @@ async fn delete_message(folder: String, uid: u32) -> Result<(), String> {
 #[tauri::command]
 fn account() -> Result<String, String> { config::load().map(|c| c.user) }
 
+#[tauri::command]
+fn saved_settings() -> Option<config::Settings> { config::read_settings() }
+
+#[tauri::command]
+async fn login(settings: config::Settings, password: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let c = config::Config {
+            user: settings.email.clone(), pass: password.clone(), imap_host: settings.imap_host.clone(),
+            imap_port: settings.imap_port, smtp_host: settings.smtp_host.clone(), smtp_port: settings.smtp_port,
+        };
+        mail::test_login(&c)?;
+        config::save(&settings, &password)
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn logout() { config::clear() }
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![list_folders, list_messages, get_message, send_mail, delete_message, account])
+        .invoke_handler(tauri::generate_handler![list_folders, list_messages, get_message, send_mail, delete_message, account, saved_settings, login, logout])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Courrier");
 }

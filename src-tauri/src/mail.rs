@@ -99,6 +99,22 @@ pub fn delete(folder: &str, uid: u32) -> Result<(), String> {
     Ok(())
 }
 
+fn smtp_transport(c: &Config) -> Result<SmtpTransport, String> {
+    // 465 = TLS implicite, sinon (587…) STARTTLS
+    let b = if c.smtp_port == 465 { SmtpTransport::relay(&c.smtp_host) } else { SmtpTransport::starttls_relay(&c.smtp_host) }.map_err(e)?;
+    Ok(b.port(c.smtp_port).credentials(Credentials::new(c.user.clone(), c.pass.clone())).build())
+}
+
+/// Vérifie IMAP puis SMTP avec ces réglages, sans rien enregistrer.
+pub fn test_login(c: &Config) -> Result<(), String> {
+    connect(c).map_err(|x| format!("IMAP : {x}"))?.logout().ok();
+    match smtp_transport(c)?.test_connection() {
+        Ok(true) => Ok(()),
+        Ok(false) => Err("SMTP : connexion refusée".into()),
+        Err(x) => Err(format!("SMTP : {x}")),
+    }
+}
+
 pub fn send(to: &str, subject: &str, body: &str, in_reply_to: Option<&str>) -> Result<(), String> {
     let c = config::load()?;
     let from: Mailbox = c.user.parse().map_err(e)?;
@@ -110,9 +126,7 @@ pub fn send(to: &str, subject: &str, body: &str, in_reply_to: Option<&str>) -> R
         b = b.in_reply_to(format!("<{id}>")).references(format!("<{id}>"));
     }
     let msg = b.body(body.to_string()).map_err(e)?;
-    let mailer = SmtpTransport::relay(&c.smtp_host).map_err(e)?
-        .credentials(Credentials::new(c.user.clone(), c.pass.clone())).build();
-    mailer.send(&msg).map_err(e)?;
+    smtp_transport(&c)?.send(&msg).map_err(e)?;
     // Fastmail n'archive pas les envois SMTP : on dépose une copie dans "Sent".
     if let Ok(mut s) = connect(&c) {
         let _ = s.append_with_flags("Sent", msg.formatted(), &[imap::types::Flag::Seen]);
@@ -130,5 +144,24 @@ mod tests {
         let l = list_messages("INBOX", 10).unwrap();
         for m in &l { println!("{} | {} | {} | seen={}", m.uid, m.from, m.subject, m.seen); }
         if let Some(m) = l.first() { let full = get_message("INBOX", m.uid).unwrap(); println!("text {} chars, html {}", full.text.len(), full.html.is_some()); }
+    }
+}
+
+#[cfg(test)]
+mod login_tests {
+    use super::*;
+    use crate::config;
+    #[test]
+    fn login_roundtrip() {
+        let txt = std::fs::read_to_string("../.env").unwrap();
+        let g = |k: &str| txt.lines().find_map(|l| l.strip_prefix(&format!("{k}="))).unwrap().to_string();
+        let mut c = Config { user: g("MAIL_USER"), pass: g("MAIL_PASS"), imap_host: "imap.fastmail.com".into(), imap_port: 993, smtp_host: "smtp.fastmail.com".into(), smtp_port: 465 };
+        test_login(&c).unwrap(); println!("login OK (465)");
+        c.smtp_port = 587; test_login(&c).unwrap(); println!("login OK (587 starttls)");
+        let bad = Config { pass: "mauvais".into(), ..c.clone() };
+        println!("mauvais mdp -> {:?}", test_login(&bad).err());
+        let s = config::Settings { email: c.user.clone(), imap_host: c.imap_host.clone(), imap_port: 993, smtp_host: c.smtp_host.clone(), smtp_port: 465 };
+        match config::save(&s, &c.pass) { Ok(()) => { println!("save OK, load={}", config::load().is_ok()); config::clear(); println!("cleared, settings={}", config::read_settings().is_none()); }
+            Err(e) => println!("save KO: {e}") }
     }
 }

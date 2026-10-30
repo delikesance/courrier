@@ -2,11 +2,33 @@
 <html lang="fr">
 <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Courrier</title></head>
 <body>
-<div id="app">
+<div id="login" hidden>
+  <form id="login-form">
+    <h1>Courrier</h1>
+    <p class="sub">Connecte ton compte mail</p>
+    <input id="l-email" type="email" placeholder="Adresse e-mail" autocomplete="username" required />
+    <input id="l-pass" type="password" placeholder="Mot de passe (ou mot de passe d'application)" autocomplete="current-password" required />
+    <details id="l-adv">
+      <summary>Paramètres du serveur</summary>
+      <div class="grid">
+        <label>IMAP<input id="l-imap-host" value="imap.fastmail.com" /></label>
+        <label>Port<input id="l-imap-port" type="number" value="993" /></label>
+        <label>SMTP<input id="l-smtp-host" value="smtp.fastmail.com" /></label>
+        <label>Port<input id="l-smtp-port" type="number" value="465" /></label>
+      </div>
+      <p class="hint">IMAP en TLS (993). SMTP : 465 = TLS, 587 = STARTTLS. Par défaut : Fastmail.</p>
+    </details>
+    <div id="l-error"></div>
+    <button type="submit" id="l-submit">Se connecter</button>
+    <p class="hint">Le mot de passe est conservé dans le trousseau du système.</p>
+  </form>
+</div>
+<div id="app" hidden>
   <aside id="side">
     <div id="account"></div>
     <button id="compose-btn">Nouveau message</button>
     <nav id="folders"></nav>
+    <button id="logout" class="ghost">Se déconnecter</button>
   </aside>
   <section id="list-pane">
     <header><h2 id="folder-title">Boîte de réception</h2><button id="refresh" title="Actualiser">↻</button></header>

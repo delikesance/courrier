@@ -99,7 +99,38 @@ $("messages").addEventListener("click", e => {
   const li = (e.target as HTMLElement).closest("li"); if (li?.dataset.uid) openMessage(+li.dataset.uid).catch(err => alert(err));
 });
 
-(async () => {
+type Settings = { email: string; imap_host: string; imap_port: number; smtp_host: string; smtp_port: number };
+const inp = (id: string) => $<HTMLInputElement>(id);
+
+async function start() {
+  $("login").hidden = true; $("app").hidden = false;
   try { $("account").textContent = await invoke<string>("account"); await loadFolders(); await loadMessages(); }
   catch (e) { $("messages").innerHTML = `<li class="subj">${esc(String(e))}</li>`; }
+}
+
+function showLogin(s?: Settings | null) {
+  $("app").hidden = true; $("login").hidden = false;
+  if (s) { inp("l-email").value = s.email; inp("l-imap-host").value = s.imap_host; inp("l-imap-port").value = String(s.imap_port); inp("l-smtp-host").value = s.smtp_host; inp("l-smtp-port").value = String(s.smtp_port); }
+  inp("l-pass").value = ""; $("l-error").textContent = "";
+  (inp("l-email").value ? inp("l-pass") : inp("l-email")).focus();
+}
+
+$("login-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const btn = $<HTMLButtonElement>("l-submit"); btn.disabled = true; btn.textContent = "Connexion…"; $("l-error").textContent = "";
+  const settings: Settings = {
+    email: inp("l-email").value.trim(), imap_host: inp("l-imap-host").value.trim(), imap_port: +inp("l-imap-port").value,
+    smtp_host: inp("l-smtp-host").value.trim(), smtp_port: +inp("l-smtp-port").value,
+  };
+  try { await invoke("login", { settings, password: inp("l-pass").value }); inp("l-pass").value = ""; await start(); }
+  catch (e) { $("l-error").textContent = String(e); }
+  btn.disabled = false; btn.textContent = "Se connecter";
+});
+
+$("logout").onclick = async () => { await invoke("logout"); current = null; $("messages").innerHTML = ""; showLogin(null); };
+
+(async () => {
+  const s = await invoke<Settings | null>("saved_settings");
+  // COURRIER_ENV (dev) : account() réussit sans réglages sauvegardés
+  if (s || await invoke<string>("account").then(() => true, () => false)) await start(); else showLogin();
 })();

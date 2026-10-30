@@ -23,8 +23,8 @@ jobs:
       - name: Dépendances Linux
         if: matrix.os == 'ubuntu-22.04'
         run: |
-          sudo -S -p '' apt-get update
-          sudo -S -p '' apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libdbus-1-dev
 
       - uses: actions/setup-node@v4
         with:

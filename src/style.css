@@ -41,3 +41,19 @@ dialog::backdrop{background:#0006}
 #compose-form footer{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding:10px 16px;border-top:1px solid var(--line)}
 #c-status{margin-right:auto;color:var(--mute);font-size:13px}
 .ghost{border-color:transparent;background:none}
+
+[hidden]{display:none!important}
+#login{height:100vh;display:grid;place-items:center;background:var(--bg2)}
+#login-form{width:min(400px,92vw);background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:28px;display:flex;flex-direction:column;gap:12px}
+#login-form h1{margin:0;font-size:22px}
+.sub{margin:0 0 6px;color:var(--mute)}
+.hint{margin:0;color:var(--mute);font-size:12px}
+#login-form input{font:inherit;padding:9px 11px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--fg);width:100%}
+#login-form input:focus{outline:2px solid var(--acc);outline-offset:-1px}
+#l-adv summary{cursor:pointer;color:var(--mute);font-size:13px;margin-bottom:8px}
+.grid{display:grid;grid-template-columns:1fr 90px;gap:8px;margin-bottom:8px}
+.grid label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--mute)}
+#l-error{color:#dc2626;font-size:13px;min-height:0}
+#l-submit{background:var(--acc);color:var(--bg);border-color:var(--acc);padding:9px}
+#l-submit:disabled{opacity:.6}
+#logout{margin-top:auto;text-align:left;color:var(--mute)}
