@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Courrier</title></head>
+<body>
+<div id="app">
+  <aside id="side">
+    <div id="account"></div>
+    <button id="compose-btn">Nouveau message</button>
+    <nav id="folders"></nav>
+  </aside>
+  <section id="list-pane">
+    <header><h2 id="folder-title">Boîte de réception</h2><button id="refresh" title="Actualiser">↻</button></header>
+    <ul id="messages"></ul>
+  </section>
+  <main id="reader"><div class="empty">Sélectionne un message</div></main>
+</div>
+<dialog id="composer">
+  <form method="dialog" id="compose-form">
+    <input id="c-to" placeholder="À" autocomplete="off" />
+    <input id="c-subject" placeholder="Objet" autocomplete="off" />
+    <textarea id="c-body" placeholder="Écrire…"></textarea>
+    <footer><span id="c-status"></span><button type="button" id="c-cancel" class="ghost">Annuler</button><button type="submit" id="c-send">Envoyer</button></footer>
+  </form>
+</dialog>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

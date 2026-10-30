@@ -1,0 +1,10 @@
+import imaplib, smtplib, ssl, os
+env = dict(l.strip().split('=',1) for l in open('.env') if '=' in l)
+ctx = ssl.create_default_context()
+m = imaplib.IMAP4_SSL(env['IMAP_HOST'], int(env['IMAP_PORT']), ssl_context=ctx)
+m.login(env['MAIL_USER'], env['MAIL_PASS'])
+st, boxes = m.list(); print("IMAP OK, folders:", len(boxes))
+st, d = m.select('INBOX', readonly=True); print("INBOX messages:", d[0].decode())
+m.logout()
+s = smtplib.SMTP_SSL(env['SMTP_HOST'], int(env['SMTP_PORT']), context=ctx)
+s.login(env['MAIL_USER'], env['MAIL_PASS']); print("SMTP auth OK"); s.quit()
