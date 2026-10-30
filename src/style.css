@@ -57,3 +57,7 @@ dialog::backdrop{background:#0006}
 #l-submit{background:var(--acc);color:var(--bg);border-color:var(--acc);padding:9px}
 #l-submit:disabled{opacity:.6}
 #logout{margin-top:auto;text-align:left;color:var(--mute)}
+
+#update{margin-top:auto;background:var(--acc);color:var(--bg);border-color:var(--acc);font-size:13px}
+#update:disabled{opacity:.7}
+#update+#logout{margin-top:0}

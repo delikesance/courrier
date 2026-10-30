@@ -60,6 +60,8 @@ fn logout() { config::clear() }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![list_folders, list_messages, get_message, send_mail, delete_message, account, saved_settings, login, logout])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Courrier");

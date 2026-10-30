@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import "./style.css";
 
 type Summary = { uid: number; from: string; subject: string; date: string; seen: boolean };
@@ -134,3 +136,30 @@ $("logout").onclick = async () => { await invoke("logout"); current = null; $("m
   // COURRIER_ENV (dev) : account() réussit sans réglages sauvegardés
   if (s || await invoke<string>("account").then(() => true, () => false)) await start(); else showLogin();
 })();
+
+// Mises à jour automatiques : vérification au démarrage puis toutes les 6 h
+let pending: Update | null = null;
+async function checkUpdate() {
+  try {
+    const u = await check();
+    if (!u) return;
+    pending = u;
+    const b = $<HTMLButtonElement>("update");
+    b.textContent = `Mettre à jour (v${u.version})`; b.hidden = false;
+  } catch (e) { console.warn("update check:", e); }
+}
+$("update").onclick = async () => {
+  if (!pending) return;
+  const b = $<HTMLButtonElement>("update"); b.disabled = true;
+  let total = 0, done = 0;
+  try {
+    await pending.downloadAndInstall(ev => {
+      if (ev.event === "Started") total = ev.data.contentLength ?? 0;
+      else if (ev.event === "Progress") { done += ev.data.chunkLength; b.textContent = total ? `Téléchargement ${Math.round(done / total * 100)} %` : "Téléchargement…"; }
+      else if (ev.event === "Finished") b.textContent = "Installation…";
+    });
+    await relaunch();
+  } catch (e) { b.disabled = false; b.textContent = "Échec — réessayer"; console.error(e); }
+};
+setTimeout(checkUpdate, 3000);
+setInterval(checkUpdate, 6 * 3600 * 1000);
