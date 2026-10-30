@@ -13,6 +13,25 @@ fn connect(c: &Config) -> Result<Session, String> {
     client.login(&c.user, &c.pass).map_err(|x| x.0.to_string())
 }
 
+
+static SESSION: std::sync::Mutex<Option<Session>> = std::sync::Mutex::new(None);
+
+/// Session IMAP persistante : évite un handshake TLS + login à chaque action. Reconnecte si la connexion est tombée.
+fn with<T>(f: impl Fn(&mut Session) -> Result<T, String>) -> Result<T, String> {
+    let mut g = SESSION.lock().unwrap_or_else(|p| p.into_inner());
+    let mut last = String::new();
+    for _ in 0..2 {
+        if g.is_none() { *g = Some(connect(&config::load()?)?); }
+        match f(g.as_mut().unwrap()) {
+            Ok(v) => return Ok(v),
+            Err(e) => { last = e; *g = None; }
+        }
+    }
+    Err(last)
+}
+
+pub fn reset() { *SESSION.lock().unwrap_or_else(|p| p.into_inner()) = None; }
+
 #[derive(Serialize)]
 pub struct Summary { pub uid: u32, pub from: String, pub subject: String, pub date: String, pub seen: bool }
 
@@ -23,11 +42,7 @@ pub struct Full {
 }
 
 pub fn list_folders() -> Result<Vec<String>, String> {
-    let mut s = connect(&config::load()?)?;
-    let names = s.list(None, Some("*")).map_err(e)?;
-    let mut v: Vec<String> = names.iter().map(|n| n.name().to_string()).collect();
-    let _ = s.logout();
-    // INBOX d'abord, puis ordre alphabétique
+    let mut v = with(|s| Ok(s.list(None, Some("*")).map_err(e)?.iter().map(|n| n.name().to_string()).collect::<Vec<_>>()))?;
     v.sort_by_key(|n| (n != "INBOX", n.to_lowercase()));
     Ok(v)
 }
@@ -44,37 +59,39 @@ fn addr_label(a: Option<&mail_parser::Address>) -> (String, String) {
 }
 
 pub fn list_messages(folder: &str, limit: u32) -> Result<Vec<Summary>, String> {
-    let mut s = connect(&config::load()?)?;
-    let mb = s.select(folder).map_err(e)?;
-    if mb.exists == 0 { let _ = s.logout(); return Ok(vec![]); }
-    let start = mb.exists.saturating_sub(limit.saturating_sub(1)).max(1);
-    let fetched = s.fetch(format!("{}:*", start), "(UID FLAGS BODY.PEEK[HEADER])").map_err(e)?;
-    let parser = MessageParser::default();
-    let mut out = Vec::new();
-    for f in fetched.iter() {
-        let Some(uid) = f.uid else { continue };
-        let Some(h) = f.header() else { continue };
-        let Some(m) = parser.parse(h) else { continue };
-        out.push(Summary {
-            uid,
-            from: addr_label(m.from()).0,
-            subject: m.subject().unwrap_or("(sans objet)").to_string(),
-            date: m.date().map(|d| d.to_rfc3339()).unwrap_or_default(),
-            seen: f.flags().iter().any(|fl| matches!(fl, imap::types::Flag::Seen)),
-        });
-    }
-    let _ = s.logout();
+    let mut out = with(|s| {
+        let mb = s.select(folder).map_err(e)?;
+        if mb.exists == 0 { return Ok(vec![]); }
+        let start = mb.exists.saturating_sub(limit.saturating_sub(1)).max(1);
+        let fetched = s.fetch(format!("{}:*", start), "(UID FLAGS BODY.PEEK[HEADER])").map_err(e)?;
+        let parser = MessageParser::default();
+        let mut out = Vec::new();
+        for f in fetched.iter() {
+            let Some(uid) = f.uid else { continue };
+            let Some(h) = f.header() else { continue };
+            let Some(m) = parser.parse(h) else { continue };
+            out.push(Summary {
+                uid,
+                from: addr_label(m.from()).0,
+                subject: m.subject().unwrap_or("(sans objet)").to_string(),
+                date: m.date().map(|d| d.to_rfc3339()).unwrap_or_default(),
+                seen: f.flags().iter().any(|fl| matches!(fl, imap::types::Flag::Seen)),
+            });
+        }
+        Ok(out)
+    })?;
     out.sort_by(|a, b| b.uid.cmp(&a.uid));
     Ok(out)
 }
 
 pub fn get_message(folder: &str, uid: u32) -> Result<Full, String> {
-    let mut s = connect(&config::load()?)?;
-    s.select(folder).map_err(e)?;
-    let fetched = s.uid_fetch(uid.to_string(), "BODY.PEEK[]").map_err(e)?;
-    let raw = fetched.iter().next().and_then(|f| f.body()).ok_or("message introuvable")?.to_vec();
-    let _ = s.uid_store(uid.to_string(), "+FLAGS (\\Seen)");
-    let _ = s.logout();
+    let raw = with(|s| {
+        s.select(folder).map_err(e)?;
+        let fetched = s.uid_fetch(uid.to_string(), "(FLAGS BODY.PEEK[])").map_err(e)?;
+        let raw = fetched.iter().next().and_then(|f| f.body()).ok_or("message introuvable")?.to_vec();
+        let _ = s.uid_store(uid.to_string(), "+FLAGS.SILENT (\\Seen)");
+        Ok(raw)
+    })?;
     let m = MessageParser::default().parse(&raw).ok_or("message illisible")?;
     let (from, from_addr) = addr_label(m.from());
     let to = m.to().map(|a| a.iter().filter_map(|x| x.address()).collect::<Vec<_>>().join(", ")).unwrap_or_default();
@@ -89,14 +106,13 @@ pub fn get_message(folder: &str, uid: u32) -> Result<Full, String> {
 }
 
 pub fn delete(folder: &str, uid: u32) -> Result<(), String> {
-    let mut s = connect(&config::load()?)?;
-    s.select(folder).map_err(e)?;
-    // Déplace vers la corbeille Fastmail ("Trash"), sinon marque supprimé.
-    if folder != "Trash" && s.uid_mv(uid.to_string(), "Trash").is_ok() { let _ = s.logout(); return Ok(()); }
-    s.uid_store(uid.to_string(), "+FLAGS (\\Deleted)").map_err(e)?;
-    s.expunge().map_err(e)?;
-    let _ = s.logout();
-    Ok(())
+    with(|s| {
+        s.select(folder).map_err(e)?;
+        if folder != "Trash" && s.uid_mv(uid.to_string(), "Trash").is_ok() { return Ok(()); }
+        s.uid_store(uid.to_string(), "+FLAGS (\\Deleted)").map_err(e)?;
+        s.expunge().map_err(e)?;
+        Ok(())
+    })
 }
 
 fn smtp_transport(c: &Config) -> Result<SmtpTransport, String> {
@@ -115,36 +131,32 @@ pub fn test_login(c: &Config) -> Result<(), String> {
     }
 }
 
+fn message_id(domain: &str) -> String {
+    let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    format!("{:x}.{:x}@{}", n, std::process::id(), domain)
+}
+
 pub fn send(to: &str, subject: &str, body: &str, in_reply_to: Option<&str>) -> Result<(), String> {
+    use lettre::message::SinglePart;
     let c = config::load()?;
     let from: Mailbox = c.user.parse().map_err(e)?;
-    let mut b = Message::builder().from(from).subject(subject);
+    let domain = c.user.rsplit('@').next().unwrap_or("localhost");
+    let mut b = Message::builder().from(from).subject(subject).message_id(Some(format!("<{}>", message_id(domain))));
     for addr in to.split([',', ';']).map(str::trim).filter(|s| !s.is_empty()) {
         b = b.to(addr.parse().map_err(|x| format!("adresse invalide « {addr} » : {x}"))?);
     }
     if let Some(id) = in_reply_to.filter(|s| !s.is_empty()) {
         b = b.in_reply_to(format!("<{id}>")).references(format!("<{id}>"));
     }
-    let msg = b.body(body.to_string()).map_err(e)?;
+    // text/plain; charset=utf-8 + MIME-Version : sans ça les filtres anti-spam (Proton, Gmail) sont sévères
+    let msg = b.singlepart(SinglePart::plain(body.to_string())).map_err(e)?;
     smtp_transport(&c)?.send(&msg).map_err(e)?;
-    // Fastmail n'archive pas les envois SMTP : on dépose une copie dans "Sent".
-    if let Ok(mut s) = connect(&c) {
-        let _ = s.append_with_flags("Sent", msg.formatted(), &[imap::types::Flag::Seen]);
-        let _ = s.logout();
-    }
+    // Fastmail n'archive pas les envois SMTP : copie dans "Sent", en tâche de fond pour ne pas bloquer l'UI.
+    let raw = msg.formatted();
+    std::thread::spawn(move || {
+        let _ = with(|s| s.append_with_flags("Sent", &raw, &[imap::types::Flag::Seen]).map_err(e));
+    });
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn live_read() {
-        let f = list_folders().unwrap(); println!("folders: {f:?}");
-        let l = list_messages("INBOX", 10).unwrap();
-        for m in &l { println!("{} | {} | {} | seen={}", m.uid, m.from, m.subject, m.seen); }
-        if let Some(m) = l.first() { let full = get_message("INBOX", m.uid).unwrap(); println!("text {} chars, html {}", full.text.len(), full.html.is_some()); }
-    }
 }
 
 #[cfg(test)]

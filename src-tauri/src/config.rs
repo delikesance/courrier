@@ -46,6 +46,7 @@ pub fn save(s: &Settings, pass: &str) -> Result<(), String> {
     entry(&s.email)?.set_password(pass).map_err(|e| format!("trousseau système : {e}"))?;
     fs::create_dir_all(dir()).map_err(|e| e.to_string())?;
     fs::write(settings_path(), serde_json::to_string_pretty(s).unwrap()).map_err(|e| e.to_string())?;
+    crate::mail::reset();
     *CACHE.lock().unwrap() = Some(Config {
         user: s.email.clone(), pass: pass.to_string(), imap_host: s.imap_host.clone(),
         imap_port: s.imap_port, smtp_host: s.smtp_host.clone(), smtp_port: s.smtp_port,
@@ -57,6 +58,7 @@ pub fn clear() {
     if let Some(s) = read_settings() { if let Ok(e) = entry(&s.email) { let _ = e.delete_credential(); } }
     let _ = fs::remove_file(settings_path());
     *CACHE.lock().unwrap() = None;
+    crate::mail::reset();
 }
 
 /// Mode dev : COURRIER_ENV=/chemin/.env pour contourner l'écran de connexion.
